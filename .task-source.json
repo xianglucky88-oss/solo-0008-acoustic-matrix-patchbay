@@ -1,0 +1,29 @@
+{
+  "version": 2,
+  "cc_feedback_profile": "cc-feedback-2611",
+  "project_domain": "数据工程",
+  "project_subdirection": "其他",
+  "delivery_profile": "local-unadmitted",
+  "baseline_tier": "local-workflow-baseline",
+  "supported_task_types": [
+    "功能优化",
+    "功能开发"
+  ],
+  "generation_scope": {
+    "mode": "explicit",
+    "basis": "本地新增数据工程仓库候选：每仓困难、地狱各一题，不申请平台准入。"
+  },
+  "workflow_ids": [
+    "report"
+  ],
+  "capability_families": [
+    "topological propagation, signed cancellation, and separate arrival buckets"
+  ],
+  "production_source": "patchmatrix",
+  "prompt_contract": {
+    "minimum_active_prompts": {
+      "功能优化": 1,
+      "功能开发": 1
+    }
+  }
+}

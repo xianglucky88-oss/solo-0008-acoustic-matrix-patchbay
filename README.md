@@ -1,12 +1,21 @@
-# 音频跳线矩阵数据编译
+# Load Ledger · 清运过磅数据仓
 
-将声明的跳线拓扑编译为按输入、取样口和延迟分组的精确净增益及路径数。 这是处理合成数据的离线参考应用，不依赖网络、数据库服务或第三方库。
+把清运站不同系统导出的过磅票据导入同一个 SQLite 数据仓。过磅单迟报、修订或作废后，日报只重算受影响的 UTC 日期和站点，旧版票据及其来源行仍可查阅。样例为合成数据。仓库地址沿用原地址，当前代码不再提供旧版音频矩阵接口。
+
+## 快速开始
+
+需要 Python 3.9+（SQLite 3.24+），无第三方依赖。选用一个新的数据库路径：
 
 ```sh
-python3 -B -m patchmatrix examples/demo.json
+python3 -B -m loadledger --db demo.sqlite ingest --batch opening --source station-export --format csv-kg-v1 examples/first.csv
+python3 -B -m loadledger --db demo.sqlite ingest --batch fixes --source audit-desk --format jsonl-g-v2 examples/corrections.jsonl
+python3 -B -m loadledger --db demo.sqlite report --start 2025-06-01 --end 2025-06-03
+python3 -B -m loadledger --db demo.sqlite trace --site south --ticket T-41
 python3 -B examples/smoke.py
 ```
 
-需要 Python 3.9+。传入任意匹配契约的 UTF-8 JSON 文件，输出 JSON 写到标准输出；非法输入使用退出码 2，诊断写到标准错误。业务上发现冲突仍会产生完整分析结果。完整测试套件暂缓；随仓冒烟样例从实际命令行入口验证有效结果与输入拒绝。
+`report` 的结束日期不含当天；加 `--site` 可查单站。报告按日期、站点和物料汇总有效票数与净重（整数克），不输出空分组。`trace` 返回当前版和历史各版的来源系统、批次、行号、文件摘要；作废最后一版仍能查阅。
 
-连接增益为带符号分数，沿一条路相乘；延迟相加；相同桶的各路径贡献相加，抵消后仍保留路径数。只处理声明数据，不操作硬件。 详见 [项目说明](PROJECT_SPEC.md) 和 [输入样例](examples/demo.json)。
+成功时输出 JSON；文件不合合同或版本冲突时退出码为 2，错误输出到标准错误。单批文件上限 16 MiB。该工具面向离线部署，不提供联网采集服务。
+
+详细字段、票据版本规则和存储分层见 [项目说明](PROJECT_SPEC.md)。

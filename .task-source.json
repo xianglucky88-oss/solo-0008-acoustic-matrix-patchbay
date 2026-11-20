@@ -1,29 +1,35 @@
 {
   "version": 2,
+  "task_source_schema_version": 1,
   "cc_feedback_profile": "cc-feedback-2611",
   "project_domain": "数据工程",
-  "project_subdirection": "其他",
+  "project_subdirection": "数仓与数据湖",
   "delivery_profile": "local-unadmitted",
   "baseline_tier": "local-workflow-baseline",
-  "supported_task_types": [
-    "功能优化",
-    "功能开发"
+  "generation_scope": {"mode": "explicit", "basis": "只替换原仓库的代码基线，本轮不生成或迁移题目。"},
+  "workflow_ids": ["ingest", "report", "trace"],
+  "production_source": "loadledger",
+  "entities": [
+    {"id": "source_batch", "label": "来源批次", "invariants": ["批次号绑定来源、合同和文件摘要"]},
+    {"id": "source_row", "label": "来源行", "relations": ["source_row.belongs_to.source_batch", "source_row.references.ticket_version"]},
+    {"id": "ticket_version", "label": "标准票据版本", "invariants": ["站点、票号、修订号唯一标识一份标准内容"]},
+    {"id": "ticket_head", "label": "票据当前版本", "relations": ["ticket_head.references.ticket_version"], "invariants": ["修订号只升不降"]},
+    {"id": "daily_rollup", "label": "站点日汇总", "invariants": ["只统计未作废的当前版本"]}
   ],
-  "generation_scope": {
-    "mode": "explicit",
-    "basis": "本地新增数据工程仓库候选：每仓困难、地狱各一题，不申请平台准入。"
-  },
-  "workflow_ids": [
-    "report"
+  "state_machines": [
+    {"subject": "ticket_head", "states": ["absent", "active", "void"], "transitions": ["absent->active", "absent->void", "active->active", "active->void", "void->active", "void->void"], "invariants": ["各转换都要求候选版高于现有修订；较旧版本只入历史"]}
   ],
   "capability_families": [
-    "topological propagation, signed cancellation, and separate arrival buckets"
+    {"family": "批量事务", "occupied_by": ["replay-and-rollback"], "available": false},
+    {"family": "版本化与审计", "occupied_by": ["source-lineage"], "available": false},
+    {"family": "增量物化", "occupied_by": ["partition-refresh"], "available": false}
   ],
-  "production_source": "patchmatrix",
-  "prompt_contract": {
-    "minimum_active_prompts": {
-      "功能优化": 1,
-      "功能开发": 1
-    }
-  }
+  "extension_seams": [
+    {"id": "source-contract", "anchor": "loadledger/intake.py", "entry": "parse", "distinct_outcome": "来源合同输出相同的标准票据及来源行号", "mechanism": "normalization"}
+  ],
+  "tension_points": [
+    {"workflow_id": "ingest", "description": "允许来源重复提供已知版本，但不能用后来到达的异值覆盖旧内容。", "observable_failure": "冲突批次留下部分入仓记录，或历史版本被覆盖。"},
+    {"workflow_id": "report", "description": "跨日修订改变两个分区，增量重算仍须和当前明细一致。", "observable_failure": "迁出日期的报表保留已经迁走的票数或净重。"},
+    {"workflow_id": "trace", "description": "标准层去重不能合并来源证据；版本与来源须取自同一个读快照。", "observable_failure": "同一版本的某个来源批次不可追溯。"}
+  ]
 }

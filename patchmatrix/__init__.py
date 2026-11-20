@@ -1,1 +1,0 @@
-"""Offline patchmatrix data pipeline."""

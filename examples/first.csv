@@ -1,0 +1,4 @@
+site,ticket,revision,operation,weighed_at,material,gross_kg,tare_kg
+south,T-41,1,upsert,2025-06-02T00:45:00+08:00,residual,10210.250,5010.125
+south,T-42,1,upsert,2025-06-01T18:00:00Z,organics,7200,5000
+north,T-42,1,upsert,2025-06-02T18:00:00Z,recyclables,8500,5050.5

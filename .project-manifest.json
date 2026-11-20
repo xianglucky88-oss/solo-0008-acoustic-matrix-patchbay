@@ -1,52 +1,51 @@
 {
   "project_shape": "backend",
   "modules": [
-    {
-      "id": "__main__",
-      "path": "patchmatrix/__main__.py"
-    },
-    {
-      "id": "influence",
-      "path": "patchmatrix/influence.py"
-    },
-    {
-      "id": "intake",
-      "path": "patchmatrix/intake.py"
-    },
-    {
-      "id": "pipeline",
-      "path": "patchmatrix/pipeline.py"
-    }
+    {"id": "cli", "path": "loadledger/__main__.py"},
+    {"id": "intake", "path": "loadledger/intake.py"},
+    {"id": "storage", "path": "loadledger/storage.py"},
+    {"id": "warehouse", "path": "loadledger/warehouse.py"},
+    {"id": "mart", "path": "loadledger/mart.py"},
+    {"id": "lineage", "path": "loadledger/lineage.py"}
   ],
   "workflows": [
     {
-      "id": "report",
-      "name": "离线数据报告",
-      "entry": "python3 -B -m patchmatrix examples/demo.json",
-      "success": "将声明的跳线拓扑编译为按输入、取样口和延迟分组的精确净增益及路径数。",
-      "failure": "格式错误退出 2，例如：feedback loop",
+      "id": "ingest",
+      "name": "多源过磅票据入仓",
+      "entry": "python3 -B -m loadledger --db demo.sqlite ingest --batch opening --source station-export --format csv-kg-v1 examples/first.csv",
+      "success": "返回行数、版本变更和重算分区；完全相同的批次重放不会再次写入。",
+      "failure": "格式错误或同版本内容冲突会拒绝整个批次，退出码为 2。",
       "verification": "python3 -B examples/smoke.py",
-      "module_ids": [
-        "__main__",
-        "influence",
-        "intake",
-        "pipeline"
-      ],
-      "steps": [
-        "读取样例与验证来源数据",
-        "计算并核对结构化报告或拒绝诊断"
-      ]
+      "module_ids": ["cli", "intake", "storage", "warehouse", "mart"],
+      "steps": ["校验来源合同并统一时区和重量单位", "登记版本和来源行，推进当前版本并重算受影响分区"]
+    },
+    {
+      "id": "report",
+      "name": "查询站点日报",
+      "entry": "python3 -B -m loadledger --db demo.sqlite report --start 2025-06-01 --end 2025-06-03",
+      "success": "按 UTC 日期、站点、物料返回有效票数和整数克净重。",
+      "failure": "日期无效或区间反向时退出码为 2。",
+      "verification": "python3 -B examples/smoke.py",
+      "module_ids": ["cli", "storage", "mart"],
+      "steps": ["打开只读仓库并校验查询区间", "查询日报分区并输出有序 JSON"]
+    },
+    {
+      "id": "trace",
+      "name": "追溯票据版本及来源",
+      "entry": "python3 -B -m loadledger --db demo.sqlite trace --site south --ticket T-41",
+      "success": "返回当前修订、历史版本及每版的来源批次、行号和文件摘要。",
+      "failure": "找不到该站点的票据时退出码为 2。",
+      "verification": "python3 -B examples/smoke.py",
+      "module_ids": ["cli", "storage", "lineage"],
+      "steps": ["在读事务中取得当前版本", "联结历史版本、批次和来源行"]
     }
   ],
   "complexity": {
     "mechanisms": [
-      {
-        "id": "domain-report",
-        "workflow_ids": [
-          "report"
-        ],
-        "behavior": "topological propagation, signed cancellation, and separate arrival buckets"
-      }
+      {"id": "normalization", "workflow_ids": ["ingest"], "behavior": "转换两种来源合同，统一 UTC 时间和精确的整数克。"},
+      {"id": "replay-and-rollback", "workflow_ids": ["ingest"], "behavior": "批次绑定来源、合同与摘要；同版本异值触发整批回滚。"},
+      {"id": "partition-refresh", "workflow_ids": ["ingest", "report"], "behavior": "当前版本只单调推进；跨日修订同时重算旧分区和新分区。"},
+      {"id": "source-lineage", "workflow_ids": ["ingest", "trace"], "behavior": "版本去重不丢弃不同批次的来源行，追溯使用一致读快照。"}
     ]
   }
 }

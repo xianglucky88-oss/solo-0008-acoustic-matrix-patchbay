@@ -5,6 +5,7 @@ import sqlite3
 import sys
 
 from .intake import InputError, identifier
+from .capacity import apply_rules, overruns
 from .lineage import trace
 from .mart import report
 from .storage import database
@@ -30,6 +31,13 @@ def main(argv=None):
     lineage = commands.add_parser('trace', help='read a ticket history and source row evidence')
     lineage.add_argument('--site', required=True)
     lineage.add_argument('--ticket', required=True)
+    rules = commands.add_parser('rules', help='apply capacity rule corrections from JSONL')
+    rules.add_argument('file', type=Path)
+    exceed = commands.add_parser('overruns', help='read continuous capacity overrun segments')
+    exceed.add_argument('--start', required=True, help='inclusive UTC ISO timestamp')
+    exceed.add_argument('--end', required=True, help='exclusive UTC ISO timestamp')
+    exceed.add_argument('--site')
+    exceed.add_argument('--material')
     args = parser.parse_args(argv)
 
     try:
@@ -40,11 +48,20 @@ def main(argv=None):
                 raise InputError('source file exceeds 16 MiB')
             with database(args.db, write=True) as conn:
                 result = ingest(conn, args.batch, args.source, args.format, data)
+        elif args.command == 'rules':
+            with args.file.open('rb') as incoming:
+                data = incoming.read(MAX_SOURCE_BYTES + 1)
+            if len(data) > MAX_SOURCE_BYTES:
+                raise InputError('rule file exceeds 16 MiB')
+            with database(args.db, write=True) as conn:
+                result = apply_rules(conn, data)
         else:
-            site = identifier(args.site, 'site') if args.site is not None else None
+            site = identifier(args.site, 'site') if getattr(args, 'site', None) is not None else None
             with database(args.db) as conn:
                 if args.command == 'report':
                     result = report(conn, args.start, args.end, site)
+                elif args.command == 'overruns':
+                    result = overruns(conn, args.start, args.end, site, args.material)
                 else:
                     result = trace(conn, site, identifier(args.ticket, 'ticket'))
     except (InputError, OSError, sqlite3.Error) as exc:

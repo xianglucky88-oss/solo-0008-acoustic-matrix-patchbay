@@ -48,6 +48,28 @@ CREATE TABLE IF NOT EXISTS daily_rollup (
     net_g INTEGER NOT NULL,
     PRIMARY KEY(day, site, material)
 );
+CREATE TABLE IF NOT EXISTS capacity_rule (
+    rule_id TEXT PRIMARY KEY,
+    site TEXT NOT NULL,
+    material TEXT NOT NULL,
+    operation TEXT NOT NULL CHECK(operation IN ('upsert', 'void')),
+    valid_from INTEGER,
+    valid_to INTEGER,
+    lookback_seconds INTEGER,
+    limit_g INTEGER
+);
+CREATE INDEX IF NOT EXISTS capacity_rule_scope ON capacity_rule(site, material, valid_from);
+CREATE TABLE IF NOT EXISTS overrun_segment (
+    site TEXT NOT NULL,
+    material TEXT NOT NULL,
+    start_ts INTEGER NOT NULL,
+    end_ts INTEGER NOT NULL,
+    rule_id TEXT NOT NULL,
+    max_excess_g INTEGER NOT NULL,
+    max_excess_ts INTEGER NOT NULL,
+    PRIMARY KEY(site, material, start_ts)
+);
+CREATE INDEX IF NOT EXISTS overrun_segment_scope ON overrun_segment(site, material, end_ts);
 """
 
 

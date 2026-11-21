@@ -24,5 +24,15 @@
 - `loadledger/storage.py` 拥有分层表、索引和连接事务。
 - `loadledger/warehouse.py` 管理批次去重、版本冲突与受影响分区。
 - `loadledger/mart.py` 重算、查询日报分区。
+- `loadledger/capacity.py` 维护容量规则与连续越线区间。
 - `loadledger/lineage.py` 展开来源行和历史版本。
-- `loadledger/__main__.py` 提供摄取、日报与追溯入口。
+- `loadledger/__main__.py` 提供摄取、日报、容量与追溯入口。
+
+## 容量规则与越线区间
+
+容量规则以 JSONL 提供，`upsert` 字段为 `rule_id,site,material,operation,valid_from,valid_to,lookback_seconds,limit_g`，时间为带显式偏移的 ISO 秒级时间戳并归一化到 UTC；`valid_to` 为 `null` 表示开放区间。`void` 只携带 `rule_id,site,material,operation`。同一站点物料的生效区间只允许相接、不允许重叠，开放区间只能是该作用域最后一条；规则 ID 不可迁移到其他站点物料。
+
+- 任一 UTC 秒 `t` 只采用当时生效的那条规则；该站该物料在半开回看窗 `(t - lookback_seconds, t]` 内的**当前有效**（`ticket_head` 指向且未作废）票据净重之和严格大于 `limit_g` 才算越线，净重恰等于上限不越线。规则在 UTC 日界外连续生效；没有生效规则的时段不产生区间。
+- 越线按连续半开区间 `[start, end)` 存储，规则交接落在越线内部时拆成每段一条规则，每段记录期间最大超额净重和首次达到该最大值的时刻。没有新票时，旧票移出回看窗或规则切换同样可能结束一段越线；同一秒的进入与退出在该秒一次性结算。
+- 票据修订、作废或规则更正与导入在同一写事务内提交，只重算实际触及的站点物料作用域；`daily_rollup` 的票数与净重口径保持不变。规则更正重算该作用域的完整事件域，使越线能够出现、合并或消失。
+- `overruns` 查询按站点、物料过滤并返回与查询窗相交的完整区间（不裁剪时间），用 `continues_before_query`、`continues_after_query` 标明区间在查询窗外是否延续；查询结束时刻为排他端点。

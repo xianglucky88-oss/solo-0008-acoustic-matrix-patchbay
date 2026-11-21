@@ -1,7 +1,15 @@
 from hashlib import sha256
 
+from .capacity import refresh_ticket_impacts
 from .intake import InputError, identifier, parse
 from .mart import rebuild
+
+
+def _head_payload(conn, site, ticket, revision):
+    return conn.execute('''
+        SELECT v.material AS material, v.weighed_at AS weighed_at, v.operation AS operation
+        FROM ticket_version v WHERE v.site = ? AND v.ticket = ? AND v.revision = ?
+    ''', (site, ticket, revision)).fetchone()
 
 
 def record_version(conn, row, line):
@@ -21,17 +29,23 @@ def record_version(conn, row, line):
     return cursor.rowcount
 
 
-def move_head(conn, candidate, partitions):
+def move_head(conn, candidate, partitions, overrun_impacts):
     site, ticket = candidate.site, candidate.ticket
     previous = conn.execute('SELECT revision, day FROM ticket_head WHERE site = ? AND ticket = ?',
                             (site, ticket)).fetchone()
     if previous is not None and previous['revision'] >= candidate.revision:
         return 0
-    if previous is not None and previous['day'] is not None:
-        partitions.add((previous['day'], site))
+    if previous is not None:
+        if previous['day'] is not None:
+            partitions.add((previous['day'], site))
+        old = _head_payload(conn, site, ticket, previous['revision'])
+        if old is not None and old['operation'] == 'upsert' and old['weighed_at']:
+            overrun_impacts.add((site, old['material']))
     day = candidate.weighed_at[:10] if candidate.weighed_at else None
     if day is not None:
         partitions.add((day, site))
+    if candidate.operation == 'upsert' and candidate.weighed_at:
+        overrun_impacts.add((site, candidate.material))
     conn.execute('''
         INSERT INTO ticket_head VALUES (?, ?, ?, ?)
         ON CONFLICT(site, ticket) DO UPDATE SET revision = excluded.revision, day = excluded.day
@@ -54,7 +68,7 @@ def ingest(conn, batch_id, source_id, format_name, data):
                 'new_versions': 0, 'head_changes': 0, 'refreshed_partitions': []}
 
     conn.execute('INSERT INTO source_batch VALUES (?, ?, ?, ?, 0)', (batch_id,) + batch_key)
-    candidates, partitions = {}, set()
+    candidates, partitions, overrun_impacts = {}, set(), set()
     rows = versions = 0
     for line, row in parse(data, format_name):
         versions += record_version(conn, row, line)
@@ -66,8 +80,10 @@ def ingest(conn, batch_id, source_id, format_name, data):
         rows += 1
     if not rows:
         raise InputError('empty source batch')
-    changes = sum(move_head(conn, row, partitions) for row in candidates.values())
+    changes = sum(move_head(conn, row, partitions, overrun_impacts)
+                  for row in candidates.values())
     rebuild(conn, partitions)
+    refresh_ticket_impacts(conn, overrun_impacts)
     conn.execute('UPDATE source_batch SET row_count = ? WHERE batch_id = ?', (rows, batch_id))
     return {'batch_id': batch_id, 'status': 'applied', 'rows': rows, 'new_versions': versions,
             'head_changes': changes, 'refreshed_partitions': [dict(day=day, site=site)

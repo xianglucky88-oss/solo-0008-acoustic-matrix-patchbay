@@ -6,6 +6,7 @@
     {"id": "storage", "path": "loadledger/storage.py"},
     {"id": "warehouse", "path": "loadledger/warehouse.py"},
     {"id": "mart", "path": "loadledger/mart.py"},
+    {"id": "capacity", "path": "loadledger/capacity.py"},
     {"id": "lineage", "path": "loadledger/lineage.py"}
   ],
   "workflows": [
@@ -38,6 +39,16 @@
       "verification": "python3 -B examples/smoke.py",
       "module_ids": ["cli", "storage", "lineage"],
       "steps": ["在读事务中取得当前版本", "联结历史版本、批次和来源行"]
+    },
+    {
+      "id": "capacity",
+      "name": "容量规则与连续越线区间",
+      "entry": "python3 -B -m loadledger --db demo.sqlite overruns --start 2025-06-01T00:00:00Z --end 2025-06-03T00:00:00Z --site south",
+      "success": "按站点物料返回连续越线起止、适用规则、最大超额及其首次时刻，半段查询标明窗外是否延续。",
+      "failure": "规则区间重叠、时间窗反向或时间戳非法时退出码为 2。",
+      "verification": "python3 -B examples/smoke.py",
+      "module_ids": ["cli", "storage", "capacity", "warehouse"],
+      "steps": ["校验容量规则合同并拒绝重叠生效区间", "按回看窗模拟每秒净重并物化连续越线区间", "票据或规则变更后只重算受影响作用域"]
     }
   ],
   "complexity": {
@@ -45,7 +56,9 @@
       {"id": "normalization", "workflow_ids": ["ingest"], "behavior": "转换两种来源合同，统一 UTC 时间和精确的整数克。"},
       {"id": "replay-and-rollback", "workflow_ids": ["ingest"], "behavior": "批次绑定来源、合同与摘要；同版本异值触发整批回滚。"},
       {"id": "partition-refresh", "workflow_ids": ["ingest", "report"], "behavior": "当前版本只单调推进；跨日修订同时重算旧分区和新分区。"},
-      {"id": "source-lineage", "workflow_ids": ["ingest", "trace"], "behavior": "版本去重不丢弃不同批次的来源行，追溯使用一致读快照。"}
+      {"id": "source-lineage", "workflow_ids": ["ingest", "trace"], "behavior": "版本去重不丢弃不同批次的来源行，追溯使用一致读快照。"},
+      {"id": "windowed-overrun", "workflow_ids": ["ingest", "capacity"], "behavior": "按半开回看窗在事件秒上模拟净重，严格超过上限才越线，规则交接拆分连续区间。"},
+      {"id": "scoped-overrun-refresh", "workflow_ids": ["ingest", "capacity"], "behavior": "票据修订、作废或规则更正后只重算受影响的站点物料作用域，日报口径不变。"}
     ]
   }
 }

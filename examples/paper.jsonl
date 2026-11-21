@@ -1,0 +1,10 @@
+{"site":"south","operation":"upsert","ticket":"T-41","revision":1,"booklet":"B-0601","print_no":1,"weighed_at":"2025-06-02T00:45:00+08:00","material":"residual","gross_g":10210250,"tare_g":5010125}
+{"site":"south","operation":"upsert","ticket":"T-42","revision":1,"booklet":"B-0601","print_no":2,"weighed_at":"2025-06-01T18:00:00Z","material":"organics","gross_g":7200000,"tare_g":5000000}
+{"site":"south","operation":"blank_return","booklet":"B-0601","print_no":3}
+{"site":"south","operation":"upsert","ticket":"T-43","revision":1,"booklet":"B-0601","print_no":4,"weighed_at":"2025-06-01T19:00:00Z","material":"residual","gross_g":8100000,"tare_g":4000000}
+{"site":"south","operation":"upsert","ticket":"T-44","revision":1,"booklet":"B-0601","print_no":5,"weighed_at":"2025-06-01T20:00:00Z","material":"recyclables","gross_g":6300000,"tare_g":3000000}
+{"site":"south","operation":"upsert","ticket":"T-45","revision":1,"booklet":"B-0601","print_no":6,"weighed_at":"2025-06-01T21:00:00Z","material":"organics","gross_g":5400000,"tare_g":2000000}
+{"site":"south","operation":"blank_return","booklet":"B-0601","print_no":9}
+{"site":"south","operation":"blank_return","booklet":"B-0601","print_no":10}
+{"site":"south","operation":"upsert","ticket":"T-51","revision":1,"booklet":"B-0602","print_no":1,"weighed_at":"2025-06-01T22:00:00Z","material":"residual","gross_g":7100000,"tare_g":3100000}
+{"site":"north","operation":"upsert","ticket":"T-61","revision":1,"booklet":"B-0501","print_no":1,"weighed_at":"2025-06-02T10:00:00Z","material":"recyclables","gross_g":8500000,"tare_g":5050500}

@@ -18,6 +18,16 @@
 - 当前层 `ticket_head` 和日报 `daily_rollup` 与导入在同一写事务中提交。对每张票只比较批次前后的当前版本；如跨日期修订，旧、新两个站点日分区都重算。按分区聚合物料、票数与净重。没有改动的分区不重建。
 - `trace` 在同一个读事务中获取当前版本、历史版本和来源行。数据库不储存原文件正文；来源号、原文件摘要和行号用于回到外部归档核对。
 
+## 纸票票簿核销与交档
+
+- 领用清单合同 `allocation-csv-v1` 为固定列 CSV：`site,booklet,first_print,last_print`，闭区间且 `1 <= first_print <= last_print`。同站点同票簿的区间在批次内或跨批次重叠都会整批拒绝；区间相邻或留空隔都合法，空隔中的号不是预发号、不算缺号。
+- 纸票过磅合同 `jsonl-paper-v3` 为 JSONL，操作取 `upsert`、`void` 或 `blank_return`。前两者携带 `ticket,revision,booklet,print_no`，重量与时间沿用 `jsonl-g-v2` 规则；`blank_return`（未使用的作废空白联交回）只允许 `site,operation,booklet,print_no`。纸票过磅行同时写入标准票据层和只追加的 `print_declaration`；空白交回只写声明。印刷号可在不同票簿（含隔月重新编号的票簿）中重复，位置始终由 `(site, booklet, print_no)` 识别。
+- 旧合同 `csv-kg-v1`、`jsonl-g-v2` 不含簿号，照常入标准层并参与日报与追溯，但不产生占号声明，不能证明任何票簿齐套。
+- 声明永不被后续行覆盖。改重（更高修订）和 `void` 都保留占号；同票重复声明同一原号只算一个位置。以下三类为争议，涉及的**预发**印刷号均不得验收：`contested`（同位置两张不同票）、`ticket_split`（同票在同站点任意票簿占两个或更多位置，跨票簿也算）、`used_vs_blank`（同位置同时有过磅声明和空白交回）。争议条目保留所有相关声明的原始批次与物理行；落在预发区间外的声明单列 `position_not_issued` 异常，不阻塞该簿验收。
+- 每个预发号的结论为可靠核销、争议或缺号。缺号仅统计完全无声明的预发号，并压缩成连续段输出，大段缺号不逐号展开。`booklet` 视图返回预发区间、缺号段、争议及越界异常；`booklets` 汇总所有出现过的票簿。
+- 交档凭据在单个写事务的同一已提交仓库视图内签发，前提是该册全部预发号可靠核销（无缺号、无区间内争议）。`certificate_evidence` 冻结签发时每个号的核销证据（批次、行、票、操作及 used/blank 归类）。同一票簿重复申请不发第二份，返回原凭据；凭据不存在或当前处于 `pending_review` 时申请失败。
+- 任何新批次的导入或新领用区间登记后，已签发凭据会在同一事务内复核：票簿不再满足全量核销时状态转为 `pending_review`，冻结的证据保持不变。`certificate` 命令只读查看凭据及其证据快照。
+
 ## 源码职责
 
 - `loadledger/intake.py` 定义来源合同与归一化。
@@ -25,4 +35,5 @@
 - `loadledger/warehouse.py` 管理批次去重、版本冲突与受影响分区。
 - `loadledger/mart.py` 重算、查询日报分区。
 - `loadledger/lineage.py` 展开来源行和历史版本。
-- `loadledger/__main__.py` 提供摄取、日报与追溯入口。
+- `loadledger/archive.py` 计算票簿核销、争议与缺号段，签发并复核交档凭据。
+- `loadledger/__main__.py` 提供摄取、日报、追溯与交档入口。

@@ -6,7 +6,8 @@
     {"id": "storage", "path": "loadledger/storage.py"},
     {"id": "warehouse", "path": "loadledger/warehouse.py"},
     {"id": "mart", "path": "loadledger/mart.py"},
-    {"id": "lineage", "path": "loadledger/lineage.py"}
+    {"id": "lineage", "path": "loadledger/lineage.py"},
+    {"id": "archive", "path": "loadledger/archive.py"}
   ],
   "workflows": [
     {
@@ -38,6 +39,36 @@
       "verification": "python3 -B examples/smoke.py",
       "module_ids": ["cli", "storage", "lineage"],
       "steps": ["在读事务中取得当前版本", "联结历史版本、批次和来源行"]
+    },
+    {
+      "id": "allocation",
+      "name": "导入票簿领用清单",
+      "entry": "python3 -B -m loadledger --db demo.sqlite ingest --batch alloc --source archive-desk --format allocation-csv-v1 examples/allocations.csv",
+      "success": "登记站点、票簿和预发印刷号闭区间；允许空隔，重叠区间整批拒绝，同批次重放为空操作。",
+      "failure": "表头、边界或区间不合法时退出码为 2。",
+      "verification": "python3 -B examples/smoke.py",
+      "module_ids": ["cli", "intake", "storage", "warehouse", "archive"],
+      "steps": ["校验闭区间合同并检测批次内与跨批次重叠", "登记领用行并复核已签发凭据"]
+    },
+    {
+      "id": "reconcile",
+      "name": "纸票票簿核销与争议查看",
+      "entry": "python3 -B -m loadledger --db demo.sqlite booklet --site south --booklet B-0601",
+      "success": "返回预发区间、压缩缺号段、争议号及造成争议的原始批次和行、区间外异常声明。",
+      "failure": "票簿不存在时返回空视图而非报错；标识符非法时退出码为 2。",
+      "verification": "python3 -B examples/smoke.py",
+      "module_ids": ["cli", "storage", "archive"],
+      "steps": ["汇总同站点同票簿的只追加占号声明", "识别争位、跨位和已用/空白冲突并压缩缺号段"]
+    },
+    {
+      "id": "certify",
+      "name": "申请交档凭据",
+      "entry": "python3 -B -m loadledger --db demo.sqlite certify --site south --booklet B-0601",
+      "success": "全册预发号可靠核销时在同一仓库视图签发凭据并冻结逐号证据；重复申请返回原凭据。",
+      "failure": "存在缺号或区间内争议、或凭据已待复核时退出码为 2，不产生第二份凭据。",
+      "verification": "python3 -B examples/smoke.py",
+      "module_ids": ["cli", "storage", "warehouse", "archive"],
+      "steps": ["在写事务内复核票簿核销结论", "冻结证据快照；后续争用将凭据转待复核并保留快照"]
     }
   ],
   "complexity": {
@@ -45,7 +76,8 @@
       {"id": "normalization", "workflow_ids": ["ingest"], "behavior": "转换两种来源合同，统一 UTC 时间和精确的整数克。"},
       {"id": "replay-and-rollback", "workflow_ids": ["ingest"], "behavior": "批次绑定来源、合同与摘要；同版本异值触发整批回滚。"},
       {"id": "partition-refresh", "workflow_ids": ["ingest", "report"], "behavior": "当前版本只单调推进；跨日修订同时重算旧分区和新分区。"},
-      {"id": "source-lineage", "workflow_ids": ["ingest", "trace"], "behavior": "版本去重不丢弃不同批次的来源行，追溯使用一致读快照。"}
+      {"id": "source-lineage", "workflow_ids": ["ingest", "trace"], "behavior": "版本去重不丢弃不同批次的来源行，追溯使用一致读快照。"},
+      {"id": "position-reconciliation", "workflow_ids": ["allocation", "reconcile", "certify"], "behavior": "占号声明只追加不覆盖，争议按站点内票簿位置计算，缺号压缩为区间，凭据冻结证据并可转待复核。"}
     ]
   }
 }

@@ -23,9 +23,35 @@ class Ticket:
     tare_g: Optional[int] = None
 
 
+@dataclass(frozen=True)
+class PaperRecord:
+    site: str
+    operation: str  # upsert, void or blank_return
+    ticket: Optional[str]
+    revision: Optional[int]
+    booklet: Optional[str]
+    print_no: Optional[int]
+    weighed_at: Optional[str] = None
+    material: Optional[str] = None
+    gross_g: Optional[int] = None
+    tare_g: Optional[int] = None
+
+
+@dataclass(frozen=True)
+class AllocationRange:
+    site: str
+    booklet: str
+    first_print: int
+    last_print: int
+
+
 BASE = ('site', 'ticket', 'revision', 'operation')
 CSV_FIELDS = BASE + ('weighed_at', 'material', 'gross_kg', 'tare_kg')
 JSON_FIELDS = ('weighed_at', 'material', 'gross_g', 'tare_g')
+PAPER_POSITION_FIELDS = ('ticket', 'revision', 'booklet', 'print_no')
+ALLOC_FIELDS = ('site', 'booklet', 'first_print', 'last_print')
+PAPER_FORMAT = 'jsonl-paper-v3'
+ALLOCATION_FORMAT = 'allocation-csv-v1'
 MATERIALS = {'organics', 'recyclables', 'residual'}
 MAX_GRAMS = 200_000_000
 STAMP = r'[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:Z|[+-][0-9]{2}:[0-9]{2})'
@@ -100,6 +126,96 @@ def unique_object(pairs):
 
 def invalid_constant(value):
     raise InputError(f'invalid JSON constant: {value}')
+
+
+def bounded_int(value, field):
+    if isinstance(value, bool) or type(value) is not int or not 1 <= value <= 2_147_483_647:
+        raise InputError(f'{field} must be a positive 32-bit integer')
+    return value
+
+
+def normalize_paper(row):
+    if not isinstance(row, dict) or not {'site', 'operation'} <= row.keys():
+        raise InputError('paper records need site and operation')
+    site = identifier(row['site'], 'site')
+    operation = row['operation']
+    if not isinstance(operation, str) or operation not in ('upsert', 'void', 'blank_return'):
+        raise InputError('operation must be upsert, void or blank_return')
+    keys = set(row)
+    if operation == 'blank_return':
+        if keys != {'site', 'operation', 'booklet', 'print_no'}:
+            raise InputError('blank_return carries only site, operation, booklet and print_no')
+        booklet = identifier(row['booklet'], 'booklet')
+        print_no = bounded_int(row['print_no'], 'print_no')
+        return PaperRecord(site, operation, None, None, booklet, print_no)
+    if not {'ticket', 'revision', 'booklet', 'print_no'} <= keys:
+        raise InputError('paper weigh records need ticket, revision, booklet and print_no')
+    ticket = identifier(row['ticket'], 'ticket')
+    revision = bounded_int(row['revision'], 'revision')
+    booklet = identifier(row['booklet'], 'booklet')
+    print_no = bounded_int(row['print_no'], 'print_no')
+    if operation == 'void':
+        if keys != {'site', 'operation', *PAPER_POSITION_FIELDS}:
+            raise InputError('void carries no timestamp, material or weights')
+        return PaperRecord(site, operation, ticket, revision, booklet, print_no)
+    if keys != {'site', 'operation', *PAPER_POSITION_FIELDS, *JSON_FIELDS}:
+        raise InputError('paper upsert needs exactly the declared fields')
+    weighed_at = utc_stamp(row['weighed_at'])
+    material = row['material']
+    if not isinstance(material, str) or material not in MATERIALS:
+        raise InputError('unknown material')
+    gross, tare = row['gross_g'], row['tare_g']
+    if (isinstance(gross, bool) or type(gross) is not int or isinstance(tare, bool)
+            or type(tare) is not int or not 0 <= tare < gross <= MAX_GRAMS):
+        raise InputError('weights must satisfy 0 <= tare < gross <= 200000000 grams')
+    return PaperRecord(site, operation, ticket, revision, booklet, print_no,
+                       weighed_at, material, gross, tare)
+
+
+def as_ticket(paper):
+    return Ticket(paper.site, paper.ticket, paper.revision, paper.operation,
+                  paper.weighed_at, paper.material, paper.gross_g, paper.tare_g)
+
+
+def parse_paper(data):
+    try:
+        text = data.decode('utf-8-sig')
+    except UnicodeDecodeError as exc:
+        raise InputError('source file must be UTF-8') from exc
+    for line_number, line in enumerate(io.StringIO(text), 1):
+        if not line.strip():
+            continue
+        try:
+            row = json.loads(line, object_pairs_hook=unique_object, parse_constant=invalid_constant)
+            yield line_number, normalize_paper(row)
+        except (ValueError, RecursionError) as exc:
+            raise InputError(f'line {line_number}: {exc}') from exc
+
+
+def parse_allocation(data):
+    try:
+        text = data.decode('utf-8-sig')
+    except UnicodeDecodeError as exc:
+        raise InputError('allocation file must be UTF-8') from exc
+    reader = csv.reader(io.StringIO(text, newline=''), strict=True)
+    try:
+        fields = next(reader, [])
+        if fields != list(ALLOC_FIELDS):
+            raise InputError('allocation header must be exactly: site,booklet,first_print,last_print')
+        for values in reader:
+            if len(values) != len(ALLOC_FIELDS):
+                raise InputError('wrong number of allocation columns')
+            site = identifier(values[0], 'site')
+            booklet = identifier(values[1], 'booklet')
+            try:
+                first, last = int(values[2]), int(values[3])
+            except ValueError:
+                raise InputError('allocation bounds must be integers')
+            if not 1 <= first <= last <= 2_147_483_647:
+                raise InputError('allocation bounds must satisfy 1 <= first_print <= last_print')
+            yield reader.line_num, AllocationRange(site, booklet, first, last)
+    except (InputError, csv.Error) as exc:
+        raise InputError(f'line {max(1, reader.line_num)}: {exc}') from exc
 
 
 def parse(data, format_name):

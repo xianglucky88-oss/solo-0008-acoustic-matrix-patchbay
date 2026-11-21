@@ -48,6 +48,52 @@ CREATE TABLE IF NOT EXISTS daily_rollup (
     net_g INTEGER NOT NULL,
     PRIMARY KEY(day, site, material)
 );
+CREATE TABLE IF NOT EXISTS allocation_row (
+    batch_id TEXT NOT NULL REFERENCES source_batch(batch_id),
+    line INTEGER NOT NULL,
+    site TEXT NOT NULL,
+    booklet TEXT NOT NULL,
+    first_print INTEGER NOT NULL,
+    last_print INTEGER NOT NULL,
+    PRIMARY KEY(batch_id, line)
+);
+CREATE INDEX IF NOT EXISTS allocation_book ON allocation_row(site, booklet);
+CREATE TABLE IF NOT EXISTS print_declaration (
+    batch_id TEXT NOT NULL REFERENCES source_batch(batch_id),
+    line INTEGER NOT NULL,
+    site TEXT NOT NULL,
+    booklet TEXT NOT NULL,
+    print_no INTEGER NOT NULL,
+    ticket TEXT,
+    revision INTEGER,
+    operation TEXT NOT NULL CHECK(operation IN ('upsert', 'void', 'blank_return')),
+    PRIMARY KEY(batch_id, line)
+);
+CREATE INDEX IF NOT EXISTS print_decl_position
+    ON print_declaration(site, booklet, print_no);
+CREATE INDEX IF NOT EXISTS print_decl_ticket
+    ON print_declaration(site, ticket);
+CREATE TABLE IF NOT EXISTS archive_certificate (
+    certificate_id TEXT PRIMARY KEY,
+    site TEXT NOT NULL,
+    booklet TEXT NOT NULL,
+    status TEXT NOT NULL CHECK(status IN ('issued', 'pending_review')),
+    issued_at TEXT NOT NULL,
+    UNIQUE(site, booklet)
+);
+CREATE TABLE IF NOT EXISTS certificate_evidence (
+    certificate_id TEXT NOT NULL REFERENCES archive_certificate(certificate_id),
+    print_no INTEGER NOT NULL,
+    kind TEXT NOT NULL CHECK(kind IN ('used', 'blank')),
+    batch_id TEXT NOT NULL,
+    line INTEGER NOT NULL,
+    ticket TEXT,
+    revision INTEGER,
+    operation TEXT NOT NULL,
+    PRIMARY KEY(certificate_id, print_no)
+);
+CREATE INDEX IF NOT EXISTS certificate_evidence_batch
+    ON certificate_evidence(batch_id, line);
 """
 
 

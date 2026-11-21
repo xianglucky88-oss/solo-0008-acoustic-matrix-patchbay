@@ -1,0 +1,21 @@
+{
+  "roster_id": "roster-2025-06",
+  "contracts": [
+    {
+      "contract_id": "C-organics-south",
+      "min_g": 15000,
+      "max_g": 8000000,
+      "sites": ["south"],
+      "materials": ["organics"],
+      "window": ["2025-06-01T00:00:00Z", "2025-07-01T00:00:00Z"]
+    },
+    {
+      "contract_id": "C-mixed",
+      "min_g": 8000,
+      "max_g": 6000000,
+      "sites": ["south", "north"],
+      "materials": ["organics", "residual"],
+      "window": ["2025-06-01T00:00:00Z", "2025-07-01T00:00:00Z"]
+    }
+  ]
+}

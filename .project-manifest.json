@@ -6,7 +6,8 @@
     {"id": "storage", "path": "loadledger/storage.py"},
     {"id": "warehouse", "path": "loadledger/warehouse.py"},
     {"id": "mart", "path": "loadledger/mart.py"},
-    {"id": "lineage", "path": "loadledger/lineage.py"}
+    {"id": "lineage", "path": "loadledger/lineage.py"},
+    {"id": "settlement", "path": "loadledger/settlement.py"}
   ],
   "workflows": [
     {
@@ -38,6 +39,16 @@
       "verification": "python3 -B examples/smoke.py",
       "module_ids": ["cli", "storage", "lineage"],
       "steps": ["在读事务中取得当前版本", "联结历史版本、批次和来源行"]
+    },
+    {
+      "id": "settle",
+      "name": "月底清运结算分配与重核",
+      "entry": "python3 -B -m loadledger --db demo.sqlite propose --doc s1 --roster roster-2025-06",
+      "success": "冻结清册和候选修订，按最小缺口、最大认可净重输出分配、未分配克数和每合同可认范围；重核保留可留存旧克数并给出增减明细。",
+      "failure": "清册无效、提案已过期或父单未签收时退出码为 2。",
+      "verification": "python3 -B examples/settlement_smoke.py",
+      "module_ids": ["cli", "storage", "settlement", "lineage"],
+      "steps": ["校验并冻结合同清册", "用整数流求双目标最优分配及合同范围", "签收时校验候选修订指纹", "更正后按第三目标重核并追溯有效修订"]
     }
   ],
   "complexity": {
@@ -45,7 +56,10 @@
       {"id": "normalization", "workflow_ids": ["ingest"], "behavior": "转换两种来源合同，统一 UTC 时间和精确的整数克。"},
       {"id": "replay-and-rollback", "workflow_ids": ["ingest"], "behavior": "批次绑定来源、合同与摘要；同版本异值触发整批回滚。"},
       {"id": "partition-refresh", "workflow_ids": ["ingest", "report"], "behavior": "当前版本只单调推进；跨日修订同时重算旧分区和新分区。"},
-      {"id": "source-lineage", "workflow_ids": ["ingest", "trace"], "behavior": "版本去重不丢弃不同批次的来源行，追溯使用一致读快照。"}
+      {"id": "source-lineage", "workflow_ids": ["ingest", "trace"], "behavior": "版本去重不丢弃不同批次的来源行，追溯使用一致读快照。"},
+      {"id": "lexicographic-flow", "workflow_ids": ["settle"], "behavior": "整数最小费用流先最小化合同缺口、再最大化认可净重，重核以同票同合同低价边保留旧克数。"},
+      {"id": "optima-range", "workflow_ids": ["settle"], "behavior": "两阶段容量流配合层感知残差改路，求出每个合同在全部全局最优分配中的可认克数上下限。"},
+      {"id": "snapshot-expiry", "workflow_ids": ["settle"], "behavior": "签收冻结清册与候选修订指纹；修订、作废或失去资格即令提案过期，重核单不可覆盖旧单。"}
     ]
   }
 }

@@ -7,6 +7,7 @@
   "workflow_checks": [
     {"workflow_id": "ingest", "command": "python3 -B examples/smoke.py"},
     {"workflow_id": "report", "command": "python3 -B examples/smoke.py"},
-    {"workflow_id": "trace", "command": "python3 -B examples/smoke.py"}
+    {"workflow_id": "trace", "command": "python3 -B examples/smoke.py"},
+    {"workflow_id": "settle", "command": "python3 -B examples/settlement_smoke.py"}
   ]
 }

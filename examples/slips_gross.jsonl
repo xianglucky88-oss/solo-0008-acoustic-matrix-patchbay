@@ -1,0 +1,2 @@
+{"site":"south","ticket":"S-101","round":1,"slip":"gross","revision":1,"operation":"upsert","device":"scale-g-01","weighed_at":"2025-06-01T08:10:00Z","material":"organics","weight_g":18250000}
+{"site":"south","ticket":"S-102","round":1,"slip":"gross","revision":1,"operation":"upsert","device":"scale-g-01","weighed_at":"2025-06-01T09:00:00Z","material":"residual","weight_g":15400000}

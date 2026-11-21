@@ -4,11 +4,11 @@ from pathlib import Path
 import sqlite3
 import sys
 
-from .intake import InputError, identifier
+from .intake import InputError, identifier, SLIP_FORMATS
 from .lineage import trace
 from .mart import report
 from .storage import database
-from .warehouse import ingest
+from .warehouse import ingest, ingest_slip
 
 
 MAX_SOURCE_BYTES = 16 * 1024 * 1024
@@ -21,7 +21,8 @@ def main(argv=None):
     upload = commands.add_parser('ingest', help='import a complete source batch atomically')
     upload.add_argument('--batch', required=True)
     upload.add_argument('--source', required=True)
-    upload.add_argument('--format', choices=('csv-kg-v1', 'jsonl-g-v2'), required=True)
+    upload.add_argument('--format',
+                        choices=('csv-kg-v1', 'jsonl-g-v2') + SLIP_FORMATS, required=True)
     upload.add_argument('file', type=Path)
     daily = commands.add_parser('report', help='read aggregated loads by UTC day and site')
     daily.add_argument('--start', required=True)
@@ -39,7 +40,10 @@ def main(argv=None):
             if len(data) > MAX_SOURCE_BYTES:
                 raise InputError('source file exceeds 16 MiB')
             with database(args.db, write=True) as conn:
-                result = ingest(conn, args.batch, args.source, args.format, data)
+                if args.format in SLIP_FORMATS:
+                    result = ingest_slip(conn, args.batch, args.source, args.format, data)
+                else:
+                    result = ingest(conn, args.batch, args.source, args.format, data)
         else:
             site = identifier(args.site, 'site') if args.site is not None else None
             with database(args.db) as conn:

@@ -4,25 +4,29 @@
 
 ## 文件输入
 
-两种输入均为 UTF-8。`csv-kg-v1` 要求固定字段集，列可重排：`site,ticket,revision,operation,weighed_at,material,gross_kg,tare_kg`。公斤值最多三位小数，不经过浮点数。`jsonl-g-v2` 每个非空物理行一个对象，前六字段相同，重量列使用整数 `gross_g,tare_g`。站点、票号、批次号、来源号标识使用 ASCII 字母数字开头，允许点、下划线和连字符，最大 64 字符。修订号为正的 32 位整数。
+两种整行输入均为 UTF-8。`csv-kg-v1` 要求固定字段集，列可重排：`site,ticket,revision,operation,weighed_at,material,gross_kg,tare_kg`。公斤值最多三位小数，不经过浮点数。`jsonl-g-v2` 每个非空物理行一个对象，前六字段相同，重量列使用整数 `gross_g,tare_g`。站点、票号、批次号、来源号、设备标识使用 ASCII 字母数字开头，允许点、下划线和连字符，最大 64 字符。修订号为正的 32 位整数。
+
+南站更换地磅后，重车（毛重）与空车（皮重）由两台设备分别导出，单联输入 `jsonl-slip-v1` 与 `csv-slip-v1` 承载这种记录。固定字段为 `site,ticket,round,slip,revision,operation,device,weighed_at,material,weight`，JSONL 重量列为整数 `weight_g`，CSV 为三位小数内的 `weight_kg`。`round`（称重轮次）与 `revision`（修订号）均为正的 32 位整数；`slip` 取 `gross`（重车联）或 `tare`（空车联）。重车联必须给出 `material`，空车联不传物料（CSV 留空、JSONL 为 `null`）。单联重量为非负整数克且不超过 200 000 千克；撤销联与整行 `void` 相同，只保留定位与操作字段。
 
 | 操作 | 字段规则 |
 | --- | --- |
-| `upsert` | ISO 时间到秒且含显式偏移；物料为 `organics`、`recyclables` 或 `residual`；皮重非负且小于毛重，毛重不超过 200 000 千克。 |
-| `void` | 只保留站点、票号、修订号和操作，CSV 其余列留空，JSONL 不传其余字段。 |
+| `upsert` | ISO 时间到秒且含显式偏移；物料为 `organics`、`recyclables` 或 `residual`（仅重车联）；整行皮重非负且小于毛重，毛重不超过 200 000 千克。 |
+| `void` | 只保留站点、票号、修订号和操作（单联另保留轮次与联别），CSV 其余列留空，JSONL 不传其余字段。 |
 
 ## 存储与增量语义
 
 - 来源层 `source_batch` 按批次 ID 记录来源、文件合同、原文件 SHA-256 和实际导入行数；`source_row` 记录每次批次中原始行与标准票据版本的映射。批次 ID 被同一来源、格式和字节再次调用时是空操作，绑定信息不同则拒绝。行号是物理行号，CSV 多行记录用结束行号。
 - 标准层 `ticket_version` 使用 `(site, ticket, revision)`，保存 UTC 时间、整数克毛重和皮重。同一版本归一化内容一致时只添加该次来源证据；内容不一致时整批回滚。不同站点同票号不合并。较低修订仍保留，高修订覆盖当前版；高修订作废同时防止迟到的低修订重新生效。
-- 当前层 `ticket_head` 和日报 `daily_rollup` 与导入在同一写事务中提交。对每张票只比较批次前后的当前版本；如跨日期修订，旧、新两个站点日分区都重算。按分区聚合物料、票数与净重。没有改动的分区不重建。
-- `trace` 在同一个读事务中获取当前版本、历史版本和来源行。数据库不储存原文件正文；来源号、原文件摘要和行号用于回到外部归档核对。
+- 单联标准层 `slip_version` 使用 `(site, ticket, round, slip, revision)`，每联各自按最高修订生效；同修订归一化内容一致时追加来源证据（各自设备证据都保留），不一致时整批回滚。`slip_round_head` 记录每个站点票号已见的最高轮次，轮次只升不降，迟到的旧轮次补联不能顶回现行票。整行模式与单联模式按 `(site, ticket)` 互锁，任一侧已建票即拒绝另一模式的写入。
+- 只有同一 `(site, ticket, round)` 上重车联与空车联的当前最高修订都为有效 `upsert` 时才能成票，且必须同时满足：空车时刻不早于重车时刻、两次称量至多相隔六小时、重车重量不小于空车重量。净重取两联重量之差，归日取重车联的 UTC 日期，物料取重车联。任一条件不成立时该轮不成票，`trace` 给出具体原因。最高轮次不成票（只到一联或条件失败）时，即便较低轮次此前已进日报，旧净重也必须移出日报。
+- 当前层 `ticket_head`、单联轮次层 `slip_round_head` 和日报 `daily_rollup` 与导入在同一写事务中提交。整行票只比较批次前后的当前版本；单联票按批次影响的站点票号，重算其最高轮次成票前后所在的重车归日分区。如跨日期修订，旧、新两个站点日分区都重算。按分区聚合物料、票数与净重，两种模式在同一分区按物料合并。没有改动的分区不重建。
+- `trace` 在同一个读事务中获取当前版本、历史版本和来源行；单联票按轮次展开两联各自的修订历史、来源行与当前成票/未成票原因。数据库不储存原文件正文；来源号、原文件摘要和行号用于回到外部归档核对。
 
 ## 源码职责
 
-- `loadledger/intake.py` 定义来源合同与归一化。
+- `loadledger/intake.py` 定义整行与单联来源合同及归一化。
 - `loadledger/storage.py` 拥有分层表、索引和连接事务。
-- `loadledger/warehouse.py` 管理批次去重、版本冲突与受影响分区。
-- `loadledger/mart.py` 重算、查询日报分区。
-- `loadledger/lineage.py` 展开来源行和历史版本。
+- `loadledger/warehouse.py` 管理批次去重、版本冲突、模式互锁、轮次推进与受影响分区。
+- `loadledger/mart.py` 拥有单联成票判定、日报重算和分区查询。
+- `loadledger/lineage.py` 展开整行来源行、单联两联来源行和历史版本。
 - `loadledger/__main__.py` 提供摄取、日报与追溯入口。

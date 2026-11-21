@@ -8,6 +8,8 @@ import subprocess
 import sys
 from tempfile import TemporaryDirectory
 
+from smoke_slips import workflow as slip_workflow
+
 
 ROOT = Path(__file__).resolve().parents[1]
 EXAMPLES = ROOT / 'examples'
@@ -110,4 +112,7 @@ def workflow(tmp):
 if __name__ == '__main__':
     with TemporaryDirectory() as directory:
         workflow(Path(directory))
+    with TemporaryDirectory() as directory:
+        slip_workflow(Path(directory))
     print('PASS: import, UTC and weight normalization, historical rollups, replay, lineage and rollback')
+    print('PASS: split-slip pairing, round head, rollup refresh, trace evidence and mode lock')

@@ -48,6 +48,39 @@ CREATE TABLE IF NOT EXISTS daily_rollup (
     net_g INTEGER NOT NULL,
     PRIMARY KEY(day, site, material)
 );
+CREATE TABLE IF NOT EXISTS slip_version (
+    site TEXT NOT NULL,
+    ticket TEXT NOT NULL,
+    round INTEGER NOT NULL,
+    slip TEXT NOT NULL CHECK(slip IN ('gross', 'tare')),
+    revision INTEGER NOT NULL,
+    operation TEXT NOT NULL CHECK(operation IN ('upsert', 'void')),
+    device TEXT,
+    weighed_at TEXT,
+    material TEXT,
+    weight_g INTEGER,
+    PRIMARY KEY(site, ticket, round, slip, revision)
+);
+CREATE TABLE IF NOT EXISTS slip_source_row (
+    batch_id TEXT NOT NULL REFERENCES source_batch(batch_id),
+    line INTEGER NOT NULL,
+    site TEXT NOT NULL,
+    ticket TEXT NOT NULL,
+    round INTEGER NOT NULL,
+    slip TEXT NOT NULL,
+    revision INTEGER NOT NULL,
+    PRIMARY KEY(batch_id, line),
+    FOREIGN KEY(site, ticket, round, slip, revision)
+        REFERENCES slip_version(site, ticket, round, slip, revision)
+);
+CREATE INDEX IF NOT EXISTS slip_source_row_ticket
+    ON slip_source_row(site, ticket, round, slip, revision);
+CREATE TABLE IF NOT EXISTS slip_round_head (
+    site TEXT NOT NULL,
+    ticket TEXT NOT NULL,
+    max_round INTEGER NOT NULL,
+    PRIMARY KEY(site, ticket)
+);
 """
 
 
